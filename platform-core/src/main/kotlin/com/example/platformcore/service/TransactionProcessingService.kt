@@ -24,7 +24,8 @@ class TransactionProcessingService(
 
     @Scheduled(fixedDelayString = "\${app.processing.poll-interval-ms:50}")
     fun claimAndDispatch() {
-        val batch = transactionRepository.claimBatch(appProperties.processing.batchSize)
+        val reclaimBefore = Instant.now().minusMillis(appProperties.processing.reclaimTimeoutMs)
+        val batch = transactionRepository.claimBatch(appProperties.processing.batchSize, reclaimBefore)
         heartbeat.touchClaim()
 
         if (batch.isEmpty()) {
@@ -37,27 +38,32 @@ class TransactionProcessingService(
 
     @Async("transactionWorkerExecutor")
     fun processAsync(tx: Transaction) {
-        val now = Instant.now()
-        val (finalStatus, reason) = when {
-            now.isAfter(tx.deadlineAt) -> TransactionStatus.FAILED to "SLA_TIMEOUT"
-            Random.nextInt(100) < 95 -> TransactionStatus.SUCCEED to null
-            else -> TransactionStatus.FAILED to "PROCESSING_FAILED"
-        }
+        try {
+            val now = Instant.now()
+            val (finalStatus, reason) = when {
+                now.isAfter(tx.deadlineAt) -> TransactionStatus.FAILED to "SLA_TIMEOUT"
+                Random.nextInt(100) < 95 -> TransactionStatus.SUCCEED to null
+                else -> TransactionStatus.FAILED to "PROCESSING_FAILED"
+            }
 
-        val updated = transactionRepository.finalizeTransaction(tx.id, finalStatus, reason)
+            val updated = transactionRepository.finalizeTransaction(tx.id, finalStatus, reason)
 
-        if (updated > 0) {
-            meterRegistry.counter("transactions.finalized.total", "status", finalStatus.name).increment()
-            val durationMs = Instant.now().toEpochMilli() - tx.createdAt.toEpochMilli()
-            meterRegistry.timer("transactions.finalize.latency").record(durationMs, TimeUnit.MILLISECONDS)
+            if (updated > 0) {
+                meterRegistry.counter("transactions.finalized.total", "status", finalStatus.name).increment()
+                val durationMs = Instant.now().toEpochMilli() - tx.createdAt.toEpochMilli()
+                meterRegistry.timer("transactions.finalize.latency").record(durationMs, TimeUnit.MILLISECONDS)
 
-            log.info(
-                "transaction finalized id={} status={} durationMs={} reason={}",
-                tx.id,
-                finalStatus,
-                durationMs,
-                reason,
-            )
+                log.info(
+                    "transaction finalized id={} status={} durationMs={} reason={}",
+                    tx.id,
+                    finalStatus,
+                    durationMs,
+                    reason,
+                )
+            }
+        } catch (ex: Exception) {
+            meterRegistry.counter("transactions.processing.errors.total").increment()
+            log.error("transaction processing failed id={}", tx.id, ex)
         }
     }
 }

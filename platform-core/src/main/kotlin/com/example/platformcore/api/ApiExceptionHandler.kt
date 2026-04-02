@@ -1,5 +1,6 @@
 package com.example.platformcore.api
 
+import com.example.platformcore.exception.InvalidRequestException
 import com.example.platformcore.exception.NotFoundException
 import com.example.platformcore.exception.OverloadedException
 import org.springframework.http.HttpStatus
@@ -29,6 +30,12 @@ class ApiExceptionHandler {
     fun handleOverloaded(ex: OverloadedException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(
             ErrorResponse(Instant.now(), 429, "OVERLOADED", ex.message ?: "Service is overloaded"),
+        )
+
+    @ExceptionHandler(InvalidRequestException::class)
+    fun handleInvalidRequest(ex: InvalidRequestException): ResponseEntity<ErrorResponse> =
+        ResponseEntity.badRequest().body(
+            ErrorResponse(Instant.now(), 400, "INVALID_REQUEST", ex.message ?: "Invalid request"),
         )
 
     @ExceptionHandler(MethodArgumentNotValidException::class)

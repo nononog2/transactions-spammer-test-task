@@ -13,6 +13,7 @@ data class AppProperties(
         val batchSize: Int,
         val pollIntervalMs: Long,
         val maxInProgress: Long,
+        val reclaimTimeoutMs: Long,
     )
 
     data class Sla(

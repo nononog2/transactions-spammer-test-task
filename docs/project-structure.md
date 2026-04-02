@@ -18,3 +18,5 @@ Repository contains two Kotlin modules and infra/docs folders:
 - Added metrics and health visibility (`transactions.in_progress`, processing heartbeat health indicator).
 - Implemented generator with configurable TPS/concurrency and latency/SLA report.
 - Added load-test guide and acceptance checks (`docs/load-test.md`).
+
+- Added hardening and execution docs: `docs/edge-cases.md`, `docs/implementation-order.md`.

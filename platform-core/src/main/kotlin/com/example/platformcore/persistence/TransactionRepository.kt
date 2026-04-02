@@ -2,6 +2,7 @@ package com.example.platformcore.persistence
 
 import com.example.platformcore.domain.Transaction
 import com.example.platformcore.domain.TransactionStatus
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -34,18 +35,23 @@ class TransactionRepository(
         return jdbc.query(sql, MapSqlParameterSource("id", id), rowMapper).firstOrNull()
     }
 
+    fun findByRequestId(requestId: UUID): Transaction? {
+        val sql = "SELECT * FROM transactions WHERE request_id = :requestId"
+        return jdbc.query(sql, MapSqlParameterSource("requestId", requestId), rowMapper).firstOrNull()
+    }
+
     fun countInProgress(): Long {
         val sql = "SELECT count(*) FROM transactions WHERE status = 'IN_PROGRESS'"
         return jdbc.queryForObject(sql, emptyMap<String, Any>(), Long::class.java) ?: 0L
     }
 
-    fun claimBatch(limit: Int): List<Transaction> {
+    fun claimBatch(limit: Int, reclaimBefore: Instant): List<Transaction> {
         val sql = """
             WITH claimable AS (
                 SELECT id
                 FROM transactions
                 WHERE status = 'IN_PROGRESS'
-                  AND processing_started_at IS NULL
+                  AND (processing_started_at IS NULL OR processing_started_at < :reclaimBefore)
                 ORDER BY created_at
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED
@@ -58,7 +64,13 @@ class TransactionRepository(
             RETURNING t.*
         """.trimIndent()
 
-        return jdbc.query(sql, MapSqlParameterSource("limit", limit), rowMapper)
+        return jdbc.query(
+            sql,
+            MapSqlParameterSource()
+                .addValue("limit", limit)
+                .addValue("reclaimBefore", reclaimBefore),
+            rowMapper,
+        )
     }
 
     fun finalizeTransaction(id: UUID, status: TransactionStatus, failureReason: String? = null): Int {
@@ -95,6 +107,11 @@ class TransactionRepository(
         """.trimIndent()
 
         return jdbc.update(sql, MapSqlParameterSource("deadline", deadline))
+    }
+
+    fun isUniqueViolation(ex: DataIntegrityViolationException): Boolean {
+        val message = ex.rootCause?.message ?: ex.message ?: ""
+        return message.contains("uq_transactions_request_id", ignoreCase = true)
     }
 
     private fun Transaction.params(): MapSqlParameterSource = MapSqlParameterSource()

@@ -3,9 +3,11 @@ package com.example.platformcore.service
 import com.example.platformcore.config.AppProperties
 import com.example.platformcore.domain.Transaction
 import com.example.platformcore.domain.TransactionStatus
+import com.example.platformcore.exception.InvalidRequestException
 import com.example.platformcore.exception.NotFoundException
 import com.example.platformcore.exception.OverloadedException
 import com.example.platformcore.persistence.TransactionRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -17,6 +19,14 @@ class TransactionService(
 ) {
 
     fun create(command: CreateTransactionCommand): Transaction {
+        if (command.accountFrom == command.accountTo) {
+            throw InvalidRequestException("accountFrom and accountTo must be different")
+        }
+
+        command.requestId?.let { requestId ->
+            transactionRepository.findByRequestId(requestId)?.let { return it }
+        }
+
         val inProgress = transactionRepository.countInProgress()
         if (inProgress >= appProperties.processing.maxInProgress) {
             throw OverloadedException("Too many IN_PROGRESS transactions: $inProgress")
@@ -39,8 +49,17 @@ class TransactionService(
             failureReason = null,
         )
 
-        transactionRepository.insert(tx)
-        return tx
+        return try {
+            transactionRepository.insert(tx)
+            tx
+        } catch (ex: DataIntegrityViolationException) {
+            if (command.requestId != null && transactionRepository.isUniqueViolation(ex)) {
+                transactionRepository.findByRequestId(command.requestId)
+                    ?: throw ex
+            } else {
+                throw ex
+            }
+        }
     }
 
     fun getById(id: UUID): Transaction =
