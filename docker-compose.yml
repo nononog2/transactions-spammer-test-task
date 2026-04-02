@@ -30,9 +30,11 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       APP_SLA_TIMEOUT_MS: 3000
+      APP_SLA_SWEEPER_INTERVAL_MS: 100
       APP_PROCESSING_WORKER_COUNT: 32
       APP_PROCESSING_BATCH_SIZE: 200
       APP_PROCESSING_POLL_INTERVAL_MS: 50
+      APP_PROCESSING_MAX_IN_PROGRESS: 25000
     volumes:
       - ./:/workspace
     depends_on:

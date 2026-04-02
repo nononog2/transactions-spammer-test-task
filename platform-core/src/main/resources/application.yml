@@ -28,5 +28,10 @@ app:
     worker-count: ${APP_PROCESSING_WORKER_COUNT:32}
     batch-size: ${APP_PROCESSING_BATCH_SIZE:200}
     poll-interval-ms: ${APP_PROCESSING_POLL_INTERVAL_MS:50}
+    max-in-progress: ${APP_PROCESSING_MAX_IN_PROGRESS:25000}
   sla:
     timeout-ms: ${APP_SLA_TIMEOUT_MS:3000}
+    sweeper-interval-ms: ${APP_SLA_SWEEPER_INTERVAL_MS:100}
+
+  scheduling:
+    enabled: ${APP_SCHEDULING_ENABLED:true}
