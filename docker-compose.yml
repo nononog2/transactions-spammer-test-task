@@ -19,10 +19,11 @@ services:
       retries: 10
 
   platform-core:
-    image: gradle:8.14.3-jdk21
+    build:
+      context: .
+      dockerfile: platform-core/Dockerfile
+    image: tst-platform-core:local
     container_name: tst-platform-core
-    working_dir: /workspace
-    command: ["gradle", ":platform-core:bootRun", "--no-daemon"]
     environment:
       GRADLE_USER_HOME: /tmp/gradle-platform-core
       DB_HOST: postgres
@@ -39,8 +40,6 @@ services:
       APP_PROCESSING_RECLAIM_TIMEOUT_MS: 500
       APP_METRICS_REFRESH_INTERVAL_MS: 1000
       APP_SCHEDULING_ENABLED: true
-    volumes:
-      - ./:/workspace
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,10 +47,11 @@ services:
       - "8080:8080"
 
   transaction-generator:
-    image: gradle:8.14.3-jdk21
+    build:
+      context: .
+      dockerfile: transaction-generator/Dockerfile
+    image: tst-transaction-generator:local
     container_name: tst-transaction-generator
-    working_dir: /workspace
-    command: ["gradle", ":transaction-generator:run", "--no-daemon"]
     environment:
       GRADLE_USER_HOME: /tmp/gradle-transaction-generator
       TARGET_URL: http://platform-core:8080
@@ -62,8 +62,6 @@ services:
       POLL_TIMEOUT_MS: 3500
       POLL_INTERVAL_MS: 50
       SLA_MS: 3000
-    volumes:
-      - ./:/workspace
     depends_on:
       platform-core:
         condition: service_started
