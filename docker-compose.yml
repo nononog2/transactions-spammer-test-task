@@ -35,6 +35,8 @@ services:
       APP_PROCESSING_BATCH_SIZE: 200
       APP_PROCESSING_POLL_INTERVAL_MS: 50
       APP_PROCESSING_MAX_IN_PROGRESS: 25000
+      APP_METRICS_REFRESH_INTERVAL_MS: 1000
+      APP_SCHEDULING_ENABLED: true
     volumes:
       - ./:/workspace
     depends_on:
@@ -51,6 +53,12 @@ services:
     environment:
       TARGET_URL: http://platform-core:8080
       TARGET_TPS: 1000
+      DURATION_SEC: 30
+      CONCURRENCY: 200
+      POLL_FINAL_STATUSES: true
+      POLL_TIMEOUT_MS: 3500
+      POLL_INTERVAL_MS: 50
+      SLA_MS: 3000
     volumes:
       - ./:/workspace
     depends_on:

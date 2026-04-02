@@ -22,6 +22,7 @@ management:
     health:
       probes:
         enabled: true
+      show-details: always
 
 app:
   processing:
@@ -32,6 +33,7 @@ app:
   sla:
     timeout-ms: ${APP_SLA_TIMEOUT_MS:3000}
     sweeper-interval-ms: ${APP_SLA_SWEEPER_INTERVAL_MS:100}
-
+  metrics:
+    refresh-interval-ms: ${APP_METRICS_REFRESH_INTERVAL_MS:1000}
   scheduling:
     enabled: ${APP_SCHEDULING_ENABLED:true}

@@ -13,3 +13,5 @@ spring:
 app:
   scheduling:
     enabled: false
+  metrics:
+    refresh-interval-ms: 1000
