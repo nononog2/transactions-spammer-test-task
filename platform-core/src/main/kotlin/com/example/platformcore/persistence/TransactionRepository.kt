@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
+import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
@@ -68,7 +69,7 @@ class TransactionRepository(
             sql,
             MapSqlParameterSource()
                 .addValue("limit", limit)
-                .addValue("reclaimBefore", reclaimBefore),
+                .addValue("reclaimBefore", reclaimBefore.toSqlTimestamp()),
             rowMapper,
         )
     }
@@ -106,7 +107,7 @@ class TransactionRepository(
               AND deadline_at <= :deadline
         """.trimIndent()
 
-        return jdbc.update(sql, MapSqlParameterSource("deadline", deadline))
+        return jdbc.update(sql, MapSqlParameterSource("deadline", deadline.toSqlTimestamp()))
     }
 
     fun isUniqueViolation(ex: DataIntegrityViolationException): Boolean {
@@ -122,12 +123,14 @@ class TransactionRepository(
         .addValue("accountTo", accountTo)
         .addValue("amount", amount)
         .addValue("currency", currency)
-        .addValue("createdAt", createdAt)
-        .addValue("updatedAt", updatedAt)
-        .addValue("deadlineAt", deadlineAt)
-        .addValue("processingStartedAt", processingStartedAt)
-        .addValue("finalizedAt", finalizedAt)
+        .addValue("createdAt", createdAt.toSqlTimestamp())
+        .addValue("updatedAt", updatedAt.toSqlTimestamp())
+        .addValue("deadlineAt", deadlineAt.toSqlTimestamp())
+        .addValue("processingStartedAt", processingStartedAt?.toSqlTimestamp())
+        .addValue("finalizedAt", finalizedAt?.toSqlTimestamp())
         .addValue("failureReason", failureReason)
+
+    private fun Instant.toSqlTimestamp(): Timestamp = Timestamp.from(this)
 
     private val rowMapper = RowMapper<Transaction> { rs, _ ->
         rs.toTransaction()
