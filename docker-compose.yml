@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tst-postgres
+    environment:
+      POSTGRES_DB: transactions
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d transactions"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  platform-core:
+    image: gradle:8.14.3-jdk21
+    container_name: tst-platform-core
+    working_dir: /workspace
+    command: ["gradle", ":platform-core:bootRun", "--no-daemon"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: transactions
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      APP_SLA_TIMEOUT_MS: 3000
+      APP_SLA_SWEEPER_INTERVAL_MS: 100
+      APP_PROCESSING_WORKER_COUNT: 32
+      APP_PROCESSING_BATCH_SIZE: 200
+      APP_PROCESSING_POLL_INTERVAL_MS: 50
+      APP_PROCESSING_MAX_IN_PROGRESS: 25000
+      APP_PROCESSING_RECLAIM_TIMEOUT_MS: 500
+      APP_METRICS_REFRESH_INTERVAL_MS: 1000
+      APP_SCHEDULING_ENABLED: true
+    volumes:
+      - ./:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  transaction-generator:
+    image: gradle:8.14.3-jdk21
+    container_name: tst-transaction-generator
+    working_dir: /workspace
+    command: ["gradle", ":transaction-generator:run", "--no-daemon"]
+    environment:
+      TARGET_URL: http://platform-core:8080
+      TARGET_TPS: 1000
+      DURATION_SEC: 30
+      CONCURRENCY: 200
+      POLL_FINAL_STATUSES: true
+      POLL_TIMEOUT_MS: 3500
+      POLL_INTERVAL_MS: 50
+      SLA_MS: 3000
+    volumes:
+      - ./:/workspace
+    depends_on:
+      platform-core:
+        condition: service_started
+
+volumes:
+  postgres_data:
