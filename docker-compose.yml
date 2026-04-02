@@ -24,6 +24,7 @@ services:
     working_dir: /workspace
     command: ["gradle", ":platform-core:bootRun", "--no-daemon"]
     environment:
+      GRADLE_USER_HOME: /tmp/gradle-platform-core
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: transactions
@@ -52,6 +53,7 @@ services:
     working_dir: /workspace
     command: ["gradle", ":transaction-generator:run", "--no-daemon"]
     environment:
+      GRADLE_USER_HOME: /tmp/gradle-transaction-generator
       TARGET_URL: http://platform-core:8080
       TARGET_TPS: 1000
       DURATION_SEC: 30
