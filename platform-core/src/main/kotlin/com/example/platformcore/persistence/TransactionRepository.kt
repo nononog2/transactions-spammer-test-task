@@ -7,10 +7,19 @@ import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+
+/** Carries all data needed to finalize one transaction in the batch UPDATE. */
+data class BatchFinalizeCommand(
+    val id: UUID,
+    val status: TransactionStatus,
+    val failureReason: String?,
+    val createdAt: Instant,
+)
 
 @Repository
 class TransactionRepository(
@@ -46,6 +55,11 @@ class TransactionRepository(
         return jdbc.queryForObject(sql, emptyMap<String, Any>(), Long::class.java) ?: 0L
     }
 
+    /**
+     * Used for crash-recovery on startup: atomically claims a batch of un-started
+     * (or stale) IN_PROGRESS transactions so they can be re-queued into the
+     * in-memory dispatch queue.
+     */
     fun claimBatch(limit: Int, reclaimBefore: Instant): List<Transaction> {
         val sql = """
             WITH claimable AS (
@@ -74,6 +88,54 @@ class TransactionRepository(
         )
     }
 
+    /**
+     * Finalizes a batch of transactions in a **single round-trip** using UNNEST.
+     *
+     * At 1000 TPS with a 10 ms drain cycle, a batch is ~10 rows — one UPDATE instead
+     * of 10 individual statements, reducing per-batch DB overhead dramatically.
+     *
+     * `NULLIF(failure_reason, '')` converts the empty-string sentinel (used for NULL
+     * failure_reason in the array) back to SQL NULL.
+     */
+    fun batchFinalizeTransactions(commands: List<BatchFinalizeCommand>): Int {
+        if (commands.isEmpty()) return 0
+
+        val sql = """
+            UPDATE transactions t
+            SET
+                status         = v.status,
+                failure_reason = NULLIF(v.failure_reason, ''),
+                finalized_at   = NOW(),
+                updated_at     = NOW(),
+                version        = version + 1
+            FROM (
+                SELECT
+                    UNNEST(:ids::uuid[])      AS id,
+                    UNNEST(:statuses::text[]) AS status,
+                    UNNEST(:reasons::text[])  AS failure_reason
+            ) v
+            WHERE t.id = v.id
+              AND t.status = 'IN_PROGRESS'
+        """.trimIndent()
+
+        return jdbc.jdbcTemplate.execute(
+            { con: java.sql.Connection -> con.prepareStatement(sql) },
+            { ps: PreparedStatement ->
+                val idsArray      = ps.connection.createArrayOf("uuid",
+                    commands.map { it.id.toString() }.toTypedArray())
+                val statusesArray = ps.connection.createArrayOf("text",
+                    commands.map { it.status.name }.toTypedArray())
+                val reasonsArray  = ps.connection.createArrayOf("text",
+                    commands.map { it.failureReason ?: "" }.toTypedArray())
+                ps.setArray(1, idsArray)
+                ps.setArray(2, statusesArray)
+                ps.setArray(3, reasonsArray)
+                ps.executeUpdate()
+            }
+        ) ?: 0
+    }
+
+    /** Legacy single-row finalize — kept for SlaGuardService compatibility if needed. */
     fun finalizeTransaction(id: UUID, status: TransactionStatus, failureReason: String? = null): Int {
         val sql = """
             UPDATE transactions

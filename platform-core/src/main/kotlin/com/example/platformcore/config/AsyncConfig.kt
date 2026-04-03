@@ -1,24 +1,5 @@
 package com.example.platformcore.config
 
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
-import org.springframework.scheduling.annotation.EnableAsync
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
-import java.util.concurrent.Executor
-
-@Configuration
-@EnableAsync
-class AsyncConfig {
-
-    @Bean(name = ["transactionWorkerExecutor"])
-    fun transactionWorkerExecutor(appProperties: AppProperties): Executor {
-        val poolSize = appProperties.processing.workerCount
-        return ThreadPoolTaskExecutor().apply {
-            corePoolSize = poolSize
-            maxPoolSize = poolSize
-            setQueueCapacity(poolSize * 20)
-            setThreadNamePrefix("tx-worker-")
-            initialize()
-        }
-    }
-}
+// Worker thread pool removed: transaction processing now uses a single-threaded
+// scheduler that drains the in-memory TransactionDispatchQueue and issues one
+// batched UPDATE per cycle, eliminating the need for a separate @Async executor.

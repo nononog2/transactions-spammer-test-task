@@ -13,16 +13,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     # PostgreSQL performance tuning for high-throughput load testing:
-    # - synchronous_commit=off: writes return before WAL flush → ~5-10x more INSERT/UPDATE throughput
-    #   (safe for load testing; risk: last ~1ms of committed txns lost on crash)
-    # - shared_buffers=256MB: larger buffer cache reduces I/O
-    # - max_connections=200: enough for Hikari pool (60) + overhead
-    # - checkpoint_completion_target=0.9: spread I/O across checkpoint interval
-    # - wal_buffers=16MB: reduce WAL I/O contention
-    # - work_mem=4MB: per-sort memory for ORDER BY in claim queries
+    #   synchronous_commit=off  — writes return before WAL flush → 5-10x INSERT/UPDATE
+    #                             throughput. Risk: last ~1 ms of committed data lost on
+    #                             crash (acceptable for a load test environment).
+    #   shared_buffers=256MB    — larger buffer cache, fewer disk reads.
+    #   wal_buffers=16MB        — reduce WAL I/O contention under concurrent writes.
+    #   work_mem=4MB            — per-sort memory (helps ORDER BY in claimBatch).
+    #   max_connections=100     — only ~30 Hikari connections needed; keep headroom low.
     command: >
       postgres
-      -c max_connections=200
+      -c max_connections=100
       -c shared_buffers=256MB
       -c effective_cache_size=512MB
       -c work_mem=4MB
@@ -52,22 +52,21 @@ services:
       DB_PASSWORD: postgres
       APP_SLA_TIMEOUT_MS: 3000
       APP_SLA_SWEEPER_INTERVAL_MS: 100
-      # 64 workers: each does one finalizeTransaction DB call (~1ms).
-      # 64 threads × 1000 ops/s capacity >> 1000 TPS requirement.
-      APP_PROCESSING_WORKER_COUNT: 64
-      # Large batch to drain queue quickly in each 20ms poll cycle
+      # Drain cycle: 10 ms → max ~10 ms from INSERT to finalize UPDATE.
+      APP_PROCESSING_POLL_INTERVAL_MS: 10
+      # Large enough to absorb any burst; at 1000 TPS × 10 ms ≈ 10 items/cycle.
       APP_PROCESSING_BATCH_SIZE: 500
-      # 20ms poll → max ~20ms claim latency, well within 3s SLA
-      APP_PROCESSING_POLL_INTERVAL_MS: 20
       APP_PROCESSING_MAX_IN_PROGRESS: 25000
       APP_PROCESSING_RECLAIM_TIMEOUT_MS: 500
+      # >> maxInProgress so queue.offer() never fails under normal load.
+      APP_PROCESSING_QUEUE_CAPACITY: 50000
       APP_METRICS_REFRESH_INTERVAL_MS: 1000
       APP_SCHEDULING_ENABLED: true
-      # Hikari pool: 64 workers + HTTP threads + claim/sweep schedulers
-      DB_POOL_MAX_SIZE: 80
-      DB_POOL_MIN_IDLE: 20
+      # Steady-state DB concurrency: ~5 HTTP (INSERT) + 1 drain scheduler + 1 SlaGuard.
+      # 30 connections is more than sufficient; saves Docker VM memory vs previous 80.
+      DB_POOL_MAX_SIZE: 30
+      DB_POOL_MIN_IDLE: 10
       DB_POOL_CONNECTION_TIMEOUT_MS: 2000
-      # Tomcat: handle burst concurrency from 1000 TPS generator
       SERVER_TOMCAT_MAX_THREADS: 400
       SERVER_TOMCAT_ACCEPT_COUNT: 200
       SERVER_TOMCAT_MAX_CONNECTIONS: 4000
