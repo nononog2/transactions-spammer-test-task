@@ -76,22 +76,63 @@ services:
     ports:
       - "8080:8080"
 
-  transaction-generator:
+  # Two generator instances, each firing 500 TPS → 1000 TPS total.
+  # Running in separate containers gives each its own Linux network namespace
+  # and therefore its own ~28 000 ephemeral ports, preventing BindException
+  # that occurs when a single container exhausts the port range under load.
+  #
+  # sysctls applied to each generator container:
+  #   tcp_tw_reuse=1          — allow immediate reuse of TIME_WAIT sockets for
+  #                             new outgoing connections (RFC-compliant with
+  #                             TCP timestamps, enabled by default on Linux).
+  #   ip_local_port_range     — expand the ephemeral range from ~28 k to ~64 k
+  #                             ports as an additional safety margin.
+  #   tcp_fin_timeout=15      — reduce TIME_WAIT from 60 s to 15 s so ports
+  #                             recycle faster under sustained load.
+  transaction-generator-1:
     build:
       context: .
       dockerfile: transaction-generator/Dockerfile
     image: tst-transaction-generator:local
-    container_name: tst-transaction-generator
+    container_name: tst-transaction-generator-1
     environment:
       GRADLE_USER_HOME: /tmp/gradle-transaction-generator
       TARGET_URL: http://platform-core:8080
-      TARGET_TPS: 1000
+      TARGET_TPS: 500
       DURATION_SEC: 30
       CONCURRENCY: 200
       POLL_FINAL_STATUSES: true
       POLL_TIMEOUT_MS: 3500
       POLL_INTERVAL_MS: 50
       SLA_MS: 3000
+    sysctls:
+      net.ipv4.tcp_tw_reuse: "1"
+      net.ipv4.ip_local_port_range: "1024 65535"
+      net.ipv4.tcp_fin_timeout: "15"
+    depends_on:
+      platform-core:
+        condition: service_started
+
+  transaction-generator-2:
+    build:
+      context: .
+      dockerfile: transaction-generator/Dockerfile
+    image: tst-transaction-generator:local
+    container_name: tst-transaction-generator-2
+    environment:
+      GRADLE_USER_HOME: /tmp/gradle-transaction-generator
+      TARGET_URL: http://platform-core:8080
+      TARGET_TPS: 500
+      DURATION_SEC: 30
+      CONCURRENCY: 200
+      POLL_FINAL_STATUSES: true
+      POLL_TIMEOUT_MS: 3500
+      POLL_INTERVAL_MS: 50
+      SLA_MS: 3000
+    sysctls:
+      net.ipv4.tcp_tw_reuse: "1"
+      net.ipv4.ip_local_port_range: "1024 65535"
+      net.ipv4.tcp_fin_timeout: "15"
     depends_on:
       platform-core:
         condition: service_started
