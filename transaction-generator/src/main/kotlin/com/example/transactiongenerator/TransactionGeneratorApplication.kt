@@ -1,5 +1,6 @@
 package com.example.transactiongenerator
 
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -36,7 +37,9 @@ fun main() = runBlocking {
 
     HttpClient(CIO) {
         install(ContentNegotiation) {
-            jackson()
+            jackson {
+                registerModule(JavaTimeModule())
+            }
         }
         engine {
             maxConnectionsCount = cfg.concurrency * 2
