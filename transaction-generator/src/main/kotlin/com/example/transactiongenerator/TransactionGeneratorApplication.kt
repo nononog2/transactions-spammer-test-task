@@ -116,7 +116,7 @@ class GeneratorRunner(
 
                     stats.onCreate(response.status, reqLatencyMs)
                     if (cfg.pollFinalStatuses && response.status == HttpStatusCode.Accepted && response.body != null) {
-                        pollUntilFinal(response.body.transactionId, response.body.createdAt, stats)
+                        pollUntilFinal(response.body.transactionId, response.body.createdAtInstantOrNow(), stats)
                     }
                 }
             }
@@ -258,9 +258,11 @@ data class CreateTransactionRequest(
 data class CreateTransactionResponse(
     val transactionId: UUID,
     val status: String,
-    val createdAt: Instant,
-    val deadlineAt: Instant,
-)
+    val createdAt: String,
+    val deadlineAt: String,
+) {
+    fun createdAtInstantOrNow(): Instant = runCatching { Instant.parse(createdAt) }.getOrElse { Instant.now() }
+}
 
 data class TransactionResponse(
     val transactionId: UUID,
