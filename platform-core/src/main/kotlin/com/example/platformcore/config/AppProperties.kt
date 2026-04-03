@@ -6,7 +6,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class AppProperties(
     val processing: Processing,
     val sla: Sla,
-    val metrics: Metrics,
 ) {
     data class Processing(
         /** How many transactions to drain from the in-memory queue per processing cycle. */
@@ -30,9 +29,5 @@ data class AppProperties(
     data class Sla(
         val timeoutMs: Long,
         val sweeperIntervalMs: Long,
-    )
-
-    data class Metrics(
-        val refreshIntervalMs: Long,
     )
 }
