@@ -45,21 +45,30 @@ fun main() = runBlocking {
             }
         }
         engine {
-            // Keep the connection pool small so OS ephemeral ports are not exhausted.
-            //
-            // A large pool (e.g. concurrency + targetTps × pollSec ≈ 3200) caused
-            // BindException: Cannot assign requested address after ~10 s because every
-            // closed TCP connection enters TIME_WAIT for ~60 s, consuming an ephemeral
-            // port. Linux has ~28 000 ports; 3200 connections × 10 s ≈ 32 000 → exhausted.
-            //
-            // HTTP/1.1 keep-alive means connections are REUSED across requests.
-            // With polling outside the semaphore, actual peak concurrency is:
-            //   creates  : at most cfg.concurrency (semaphore-gated, each held ~2 ms)
-            //   polls    : ~concurrency coroutines alive at once, each makes one GET
-            //              then sleeps pollIntervalMs before the next → not all
-            //              simultaneously in-flight
-            // concurrency * 2 = 400 gives ample headroom without port exhaustion.
+            // Global connection pool.  Sized at concurrency * 2 so there is always a
+            // free slot for both creates (semaphore-gated) and concurrent polls.
             maxConnectionsCount = cfg.concurrency * 2
+
+            endpoint {
+                // Per-route (host:port) connection limit — must equal the global limit
+                // for a single-target test so the per-route cap never fires first.
+                maxConnectionsPerRoute = cfg.concurrency * 2
+
+                // Keep idle connections alive for 30 s.  This is the primary lever
+                // against BindException: as long as a connection is reused the port
+                // stays open and never enters TIME_WAIT.
+                keepAliveTime = 30_000
+
+                // How many pipelined requests a single TCP connection may carry.
+                // 20 in-flight requests per connection → at 1000 TPS only ~2 ms per
+                // request, so ≈ 2 concurrent; with pipelining one connection suffices
+                // for the entire load and new TCP connections are rarely opened.
+                pipelineMaxSize = 20
+
+                connectTimeout = 5_000
+                connectRetryAttempts = 0
+            }
+
             requestTimeout = 5_000
         }
     }.use { client ->
