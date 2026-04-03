@@ -1,11 +1,9 @@
 server:
   tomcat:
-    # At 1000 TPS each request ~2-5ms → need ~5-10 concurrent threads, but spikes can hit more.
-    # 400 threads gives headroom without excessive memory.
+    # At 1000 TPS each POST takes ~2-5 ms → need ~5-10 concurrent threads in steady state.
+    # 400 gives safe headroom for bursts without excessive memory cost.
     max-threads: ${SERVER_TOMCAT_MAX_THREADS:400}
-    # Backlog for incoming connections while all threads are busy
     accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:200}
-    # Keep-alive for generator clients avoids TCP handshake overhead
     max-connections: ${SERVER_TOMCAT_MAX_CONNECTIONS:4000}
 
 spring:
@@ -16,12 +14,12 @@ spring:
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
     hikari:
-      # 32 worker threads + claim + sweep + HTTP threads all need connections.
-      # 60 prevents starvation while staying under PG max_connections=200.
-      maximum-pool-size: ${DB_POOL_MAX_SIZE:60}
-      minimum-idle: ${DB_POOL_MIN_IDLE:20}
+      # HTTP threads (INSERT) + drain scheduler (batch UPDATE) + SlaGuard (bulk UPDATE)
+      # + recovery claimBatch = well under 30 connections needed in steady state.
+      # 30 gives headroom without putting pressure on PostgreSQL max_connections.
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
       connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:2000}
-      # Validate connections quickly to fail fast on stale pool entries
       keepalive-time: 30000
   flyway:
     enabled: true
@@ -40,12 +38,15 @@ management:
 
 app:
   processing:
-    worker-count: ${APP_PROCESSING_WORKER_COUNT:64}
+    # Max items drained from the in-memory queue per cycle.
+    # At 1000 TPS × 10 ms interval = ~10 items/cycle; 500 absorbs any spike.
     batch-size: ${APP_PROCESSING_BATCH_SIZE:500}
-    # Poll every 20ms → max ~50ms claim latency (vs 100ms before)
-    poll-interval-ms: ${APP_PROCESSING_POLL_INTERVAL_MS:20}
+    # Drain+finalize cycle interval. 10 ms → max finalization latency ≈ 10 ms (vs 50 ms before).
+    poll-interval-ms: ${APP_PROCESSING_POLL_INTERVAL_MS:10}
     max-in-progress: ${APP_PROCESSING_MAX_IN_PROGRESS:25000}
     reclaim-timeout-ms: ${APP_PROCESSING_RECLAIM_TIMEOUT_MS:500}
+    # Queue capacity; must be >> maxInProgress so offer() never blocks.
+    queue-capacity: ${APP_PROCESSING_QUEUE_CAPACITY:50000}
   sla:
     timeout-ms: ${APP_SLA_TIMEOUT_MS:3000}
     sweeper-interval-ms: ${APP_SLA_SWEEPER_INTERVAL_MS:100}
