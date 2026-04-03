@@ -101,6 +101,8 @@ class TransactionRepository(
     fun batchFinalizeTransactions(commands: List<BatchFinalizeCommand>): Int {
         if (commands.isEmpty()) return 0
 
+        // Use positional ? placeholders — raw JdbcTemplate does not translate
+        // named :param syntax (that belongs to NamedParameterJdbcTemplate).
         val sql = """
             UPDATE transactions t
             SET
@@ -111,16 +113,16 @@ class TransactionRepository(
                 version        = version + 1
             FROM (
                 SELECT
-                    UNNEST(:ids::uuid[])      AS id,
-                    UNNEST(:statuses::text[]) AS status,
-                    UNNEST(:reasons::text[])  AS failure_reason
+                    UNNEST(?::uuid[])  AS id,
+                    UNNEST(?::text[])  AS status,
+                    UNNEST(?::text[])  AS failure_reason
             ) v
             WHERE t.id = v.id
               AND t.status = 'IN_PROGRESS'
         """.trimIndent()
 
-        // Explicit types are required to resolve ambiguity between
-        // PreparedStatementCreator/Callback and CallableStatementCreator/Callback overloads.
+        // Explicit SAM types resolve ambiguity between PreparedStatementCreator/Callback
+        // and CallableStatementCreator/Callback overloads in Kotlin.
         return jdbc.jdbcTemplate.execute(
             PreparedStatementCreator { con -> con.prepareStatement(sql) },
             PreparedStatementCallback<Int> { ps ->
