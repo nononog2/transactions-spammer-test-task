@@ -6,6 +6,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.cio.endpoint
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -60,7 +61,7 @@ fun main() = runBlocking {
                 keepAliveTime = 30_000
 
                 connectTimeout = 5_000
-                connectRetryAttempts = 0
+                connectAttempts = 1
                 // pipelineMaxSize is intentionally left at default (20 is the Ktor
                 // default) — explicit pipelining can cause issues with Tomcat under
                 // high load, so we rely on keep-alive + pool reuse instead.

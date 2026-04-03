@@ -47,7 +47,7 @@ services:
       # Generators use condition: service_healthy so they only start sending
       # traffic once Spring Boot has fully initialized (Flyway migrations done,
       # all beans wired, Tomcat accepting connections).
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/actuator/health"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -69,7 +69,6 @@ services:
       APP_PROCESSING_RECLAIM_TIMEOUT_MS: 500
       # >> maxInProgress so queue.offer() never fails under normal load.
       APP_PROCESSING_QUEUE_CAPACITY: 50000
-      APP_METRICS_REFRESH_INTERVAL_MS: 1000
       APP_SCHEDULING_ENABLED: true
       # Steady-state DB concurrency: ~5 HTTP (INSERT) + 1 drain scheduler + 1 SlaGuard.
       # 30 connections is more than sufficient; saves Docker VM memory vs previous 80.
@@ -108,7 +107,7 @@ services:
       GRADLE_USER_HOME: /tmp/gradle-transaction-generator
       TARGET_URL: http://platform-core:8080
       TARGET_TPS: 500
-      DURATION_SEC: 30
+      DURATION_SEC: 300
       CONCURRENCY: 200
       POLL_FINAL_STATUSES: true
       POLL_TIMEOUT_MS: 3500
@@ -132,7 +131,7 @@ services:
       GRADLE_USER_HOME: /tmp/gradle-transaction-generator
       TARGET_URL: http://platform-core:8080
       TARGET_TPS: 500
-      DURATION_SEC: 30
+      DURATION_SEC: 300
       CONCURRENCY: 200
       POLL_FINAL_STATUSES: true
       POLL_TIMEOUT_MS: 3500

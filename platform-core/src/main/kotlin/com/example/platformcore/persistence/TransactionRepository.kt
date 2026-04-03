@@ -140,28 +140,6 @@ class TransactionRepository(
         ) ?: 0
     }
 
-    /** Legacy single-row finalize — kept for SlaGuardService compatibility if needed. */
-    fun finalizeTransaction(id: UUID, status: TransactionStatus, failureReason: String? = null): Int {
-        val sql = """
-            UPDATE transactions
-            SET status = :status,
-                failure_reason = :failureReason,
-                finalized_at = NOW(),
-                updated_at = NOW(),
-                version = version + 1
-            WHERE id = :id
-              AND status = 'IN_PROGRESS'
-        """.trimIndent()
-
-        return jdbc.update(
-            sql,
-            MapSqlParameterSource()
-                .addValue("id", id)
-                .addValue("status", status.name)
-                .addValue("failureReason", failureReason),
-        )
-    }
-
     fun failExpired(deadline: Instant): Int {
         val sql = """
             UPDATE transactions
