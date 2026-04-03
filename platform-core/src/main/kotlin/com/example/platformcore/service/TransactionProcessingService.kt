@@ -19,6 +19,7 @@ class TransactionProcessingService(
     private val appProperties: AppProperties,
     private val meterRegistry: MeterRegistry,
     private val heartbeat: ProcessingHeartbeat,
+    private val inProgressCounter: InProgressCounter,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -49,11 +50,12 @@ class TransactionProcessingService(
             val updated = transactionRepository.finalizeTransaction(tx.id, finalStatus, reason)
 
             if (updated > 0) {
+                inProgressCounter.decrement()
                 meterRegistry.counter("transactions.finalized.total", "status", finalStatus.name).increment()
                 val durationMs = Instant.now().toEpochMilli() - tx.createdAt.toEpochMilli()
                 meterRegistry.timer("transactions.finalize.latency").record(durationMs, TimeUnit.MILLISECONDS)
 
-                log.info(
+                log.debug(
                     "transaction finalized id={} status={} durationMs={} reason={}",
                     tx.id,
                     finalStatus,

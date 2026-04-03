@@ -16,6 +16,7 @@ import java.util.UUID
 class TransactionService(
     private val transactionRepository: TransactionRepository,
     private val appProperties: AppProperties,
+    private val inProgressCounter: InProgressCounter,
 ) {
 
     fun create(command: CreateTransactionCommand): Transaction {
@@ -23,11 +24,8 @@ class TransactionService(
             throw InvalidRequestException("accountFrom and accountTo must be different")
         }
 
-        command.requestId?.let { requestId ->
-            transactionRepository.findByRequestId(requestId)?.let { return it }
-        }
-
-        val inProgress = transactionRepository.countInProgress()
+        // Check overload using in-memory counter — avoids COUNT(*) DB query on every request
+        val inProgress = inProgressCounter.get()
         if (inProgress >= appProperties.processing.maxInProgress) {
             throw OverloadedException("Too many IN_PROGRESS transactions: $inProgress")
         }
@@ -51,8 +49,10 @@ class TransactionService(
 
         return try {
             transactionRepository.insert(tx)
+            inProgressCounter.increment()
             tx
         } catch (ex: DataIntegrityViolationException) {
+            // Idempotency: duplicate requestId — return existing transaction
             if (command.requestId != null && transactionRepository.isUniqueViolation(ex)) {
                 transactionRepository.findByRequestId(command.requestId)
                     ?: throw ex
