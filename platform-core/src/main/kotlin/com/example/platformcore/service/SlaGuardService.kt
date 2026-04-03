@@ -12,6 +12,7 @@ class SlaGuardService(
     private val transactionRepository: TransactionRepository,
     private val meterRegistry: MeterRegistry,
     private val heartbeat: ProcessingHeartbeat,
+    private val inProgressCounter: InProgressCounter,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -21,6 +22,7 @@ class SlaGuardService(
         heartbeat.touchSlaSweep()
 
         if (failed > 0) {
+            inProgressCounter.decrementBy(failed.toLong())
             meterRegistry.counter("transactions.sla.timeout.total").increment(failed.toDouble())
             log.warn("sla sweeper failed {} expired transactions", failed)
         }

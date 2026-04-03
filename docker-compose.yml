@@ -12,6 +12,25 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # PostgreSQL performance tuning for high-throughput load testing:
+    # - synchronous_commit=off: writes return before WAL flush → ~5-10x more INSERT/UPDATE throughput
+    #   (safe for load testing; risk: last ~1ms of committed txns lost on crash)
+    # - shared_buffers=256MB: larger buffer cache reduces I/O
+    # - max_connections=200: enough for Hikari pool (60) + overhead
+    # - checkpoint_completion_target=0.9: spread I/O across checkpoint interval
+    # - wal_buffers=16MB: reduce WAL I/O contention
+    # - work_mem=4MB: per-sort memory for ORDER BY in claim queries
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c work_mem=4MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c synchronous_commit=off
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d transactions"]
       interval: 5s
@@ -33,13 +52,25 @@ services:
       DB_PASSWORD: postgres
       APP_SLA_TIMEOUT_MS: 3000
       APP_SLA_SWEEPER_INTERVAL_MS: 100
-      APP_PROCESSING_WORKER_COUNT: 32
-      APP_PROCESSING_BATCH_SIZE: 200
-      APP_PROCESSING_POLL_INTERVAL_MS: 50
+      # 64 workers: each does one finalizeTransaction DB call (~1ms).
+      # 64 threads × 1000 ops/s capacity >> 1000 TPS requirement.
+      APP_PROCESSING_WORKER_COUNT: 64
+      # Large batch to drain queue quickly in each 20ms poll cycle
+      APP_PROCESSING_BATCH_SIZE: 500
+      # 20ms poll → max ~20ms claim latency, well within 3s SLA
+      APP_PROCESSING_POLL_INTERVAL_MS: 20
       APP_PROCESSING_MAX_IN_PROGRESS: 25000
       APP_PROCESSING_RECLAIM_TIMEOUT_MS: 500
       APP_METRICS_REFRESH_INTERVAL_MS: 1000
       APP_SCHEDULING_ENABLED: true
+      # Hikari pool: 64 workers + HTTP threads + claim/sweep schedulers
+      DB_POOL_MAX_SIZE: 80
+      DB_POOL_MIN_IDLE: 20
+      DB_POOL_CONNECTION_TIMEOUT_MS: 2000
+      # Tomcat: handle burst concurrency from 1000 TPS generator
+      SERVER_TOMCAT_MAX_THREADS: 400
+      SERVER_TOMCAT_ACCEPT_COUNT: 200
+      SERVER_TOMCAT_MAX_CONNECTIONS: 4000
     depends_on:
       postgres:
         condition: service_healthy
