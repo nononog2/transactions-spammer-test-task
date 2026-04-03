@@ -1,8 +1,10 @@
 package com.example.transactiongenerator
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
@@ -30,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
 private val log = LoggerFactory.getLogger("transaction-generator")
+private val responseMapper = ObjectMapper().registerModule(JavaTimeModule())
 
 fun main() = runBlocking {
     val cfg = GeneratorConfig.fromEnv()
@@ -142,7 +145,8 @@ class GeneratorRunner(
                 setBody(payload)
             }
             if (response.status == HttpStatusCode.Accepted) {
-                CreateCallResult(response.status, response.body<CreateTransactionResponse>())
+                val payload = response.bodyAsText()
+                CreateCallResult(response.status, parseCreateTransactionResponse(payload))
             } else {
                 CreateCallResult(response.status, null)
             }
@@ -150,6 +154,18 @@ class GeneratorRunner(
             log.debug("create request failed", it)
             CreateCallResult(HttpStatusCode.ServiceUnavailable, null)
         }
+    }
+
+    private fun parseCreateTransactionResponse(payload: String): CreateTransactionResponse = runCatching {
+        responseMapper.readValue(payload, CreateTransactionResponse::class.java)
+    }.getOrElse {
+        val node = responseMapper.readTree(payload)
+        CreateTransactionResponse(
+            transactionId = UUID.fromString(node.requiredText("transactionId")),
+            status = node.requiredText("status"),
+            createdAt = node.requiredText("createdAt"),
+            deadlineAt = node.requiredText("deadlineAt"),
+        )
     }
 
     private suspend fun pollUntilFinal(transactionId: UUID, createdAt: Instant, stats: StatsCollector) {
@@ -273,3 +289,7 @@ data class CreateCallResult(
     val status: HttpStatusCode,
     val body: CreateTransactionResponse?,
 )
+
+
+private fun com.fasterxml.jackson.databind.JsonNode.requiredText(field: String): String = this.get(field)?.asText()
+    ?: error("Missing field '$field' in response payload")
