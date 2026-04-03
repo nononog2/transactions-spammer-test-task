@@ -3,11 +3,12 @@ package com.example.platformcore.persistence
 import com.example.platformcore.domain.Transaction
 import com.example.platformcore.domain.TransactionStatus
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.jdbc.core.PreparedStatementCallback
+import org.springframework.jdbc.core.PreparedStatementCreator
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
-import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
@@ -118,9 +119,11 @@ class TransactionRepository(
               AND t.status = 'IN_PROGRESS'
         """.trimIndent()
 
+        // Explicit types are required to resolve ambiguity between
+        // PreparedStatementCreator/Callback and CallableStatementCreator/Callback overloads.
         return jdbc.jdbcTemplate.execute(
-            { con: java.sql.Connection -> con.prepareStatement(sql) },
-            { ps: PreparedStatement ->
+            PreparedStatementCreator { con -> con.prepareStatement(sql) },
+            PreparedStatementCallback<Int> { ps ->
                 val idsArray      = ps.connection.createArrayOf("uuid",
                     commands.map { it.id.toString() }.toTypedArray())
                 val statusesArray = ps.connection.createArrayOf("text",
