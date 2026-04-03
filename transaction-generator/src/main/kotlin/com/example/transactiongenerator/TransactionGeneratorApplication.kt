@@ -45,13 +45,21 @@ fun main() = runBlocking {
             }
         }
         engine {
-            // Size the pool for concurrent creates + concurrent polls.
-            // At targetTps=1000 with pollTimeoutMs=3500 and pollIntervalMs=50:
-            //   max concurrent polls ≈ targetTps × avgFinalizationSec ≈ 1000 × 0.2 = 200
-            //   max concurrent creates = concurrency (semaphore-gated)
-            //   total headroom = concurrency + targetTps * (pollTimeoutMs / 1000)
-            // We cap at 4000 to avoid resource exhaustion in Docker.
-            maxConnectionsCount = minOf(cfg.concurrency + cfg.targetTps * (cfg.pollTimeoutMs / 1000).toInt(), 4000)
+            // Keep the connection pool small so OS ephemeral ports are not exhausted.
+            //
+            // A large pool (e.g. concurrency + targetTps × pollSec ≈ 3200) caused
+            // BindException: Cannot assign requested address after ~10 s because every
+            // closed TCP connection enters TIME_WAIT for ~60 s, consuming an ephemeral
+            // port. Linux has ~28 000 ports; 3200 connections × 10 s ≈ 32 000 → exhausted.
+            //
+            // HTTP/1.1 keep-alive means connections are REUSED across requests.
+            // With polling outside the semaphore, actual peak concurrency is:
+            //   creates  : at most cfg.concurrency (semaphore-gated, each held ~2 ms)
+            //   polls    : ~concurrency coroutines alive at once, each makes one GET
+            //              then sleeps pollIntervalMs before the next → not all
+            //              simultaneously in-flight
+            // concurrency * 2 = 400 gives ample headroom without port exhaustion.
+            maxConnectionsCount = cfg.concurrency * 2
             requestTimeout = 5_000
         }
     }.use { client ->
