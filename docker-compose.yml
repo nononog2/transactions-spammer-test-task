@@ -43,6 +43,15 @@ services:
       dockerfile: platform-core/Dockerfile
     image: tst-platform-core:local
     container_name: tst-platform-core
+    healthcheck:
+      # Generators use condition: service_healthy so they only start sending
+      # traffic once Spring Boot has fully initialized (Flyway migrations done,
+      # all beans wired, Tomcat accepting connections).
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 60s
     environment:
       GRADLE_USER_HOME: /tmp/gradle-platform-core
       DB_HOST: postgres
@@ -111,7 +120,7 @@ services:
       net.ipv4.tcp_fin_timeout: "15"
     depends_on:
       platform-core:
-        condition: service_started
+        condition: service_healthy
 
   transaction-generator-2:
     build:
@@ -135,7 +144,7 @@ services:
       net.ipv4.tcp_fin_timeout: "15"
     depends_on:
       platform-core:
-        condition: service_started
+        condition: service_healthy
 
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -148,7 +157,7 @@ services:
       - "9090:9090"
     depends_on:
       platform-core:
-        condition: service_started
+        condition: service_healthy
 
   grafana:
     image: grafana/grafana:11.2.0
