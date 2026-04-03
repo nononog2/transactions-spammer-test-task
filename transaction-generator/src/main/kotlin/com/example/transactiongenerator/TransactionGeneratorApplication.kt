@@ -45,8 +45,14 @@ fun main() = runBlocking {
             }
         }
         engine {
-            maxConnectionsCount = cfg.concurrency * 2
-            requestTimeout = 2_000
+            // Size the pool for concurrent creates + concurrent polls.
+            // At targetTps=1000 with pollTimeoutMs=3500 and pollIntervalMs=50:
+            //   max concurrent polls ≈ targetTps × avgFinalizationSec ≈ 1000 × 0.2 = 200
+            //   max concurrent creates = concurrency (semaphore-gated)
+            //   total headroom = concurrency + targetTps * (pollTimeoutMs / 1000)
+            // We cap at 4000 to avoid resource exhaustion in Docker.
+            maxConnectionsCount = minOf(cfg.concurrency + cfg.targetTps * (cfg.pollTimeoutMs / 1000).toInt(), 4000)
+            requestTimeout = 5_000
         }
     }.use { client ->
         val runner = GeneratorRunner(client, cfg)
@@ -112,15 +118,19 @@ class GeneratorRunner(
             }
 
             jobs += async(Dispatchers.IO) {
-                semaphore.withPermit {
+                // Semaphore gates ONLY the create request (~1-2 ms).
+                // Polling must run OUTSIDE the permit: if polls (up to pollTimeoutMs=3500ms)
+                // were inside, each of the 200 slots would be held for seconds, capping
+                // throughput to ~200/3500ms ≈ 57 TPS and causing a total stall once the
+                // scheduler exhausts all 30 000 slots waiting for semaphore.
+                val response = semaphore.withPermit {
                     val reqStart = Instant.now()
-                    val response = sendCreateRequest()
-                    val reqLatencyMs = Duration.between(reqStart, Instant.now()).toMillis()
-
-                    stats.onCreate(response.status, reqLatencyMs)
-                    if (cfg.pollFinalStatuses && response.status == HttpStatusCode.Accepted && response.body != null) {
-                        pollUntilFinal(response.body.transactionId, response.body.createdAtInstantOrNow(), stats)
-                    }
+                    val r = sendCreateRequest()
+                    stats.onCreate(r.status, Duration.between(reqStart, Instant.now()).toMillis())
+                    r
+                }
+                if (cfg.pollFinalStatuses && response.status == HttpStatusCode.Accepted && response.body != null) {
+                    pollUntilFinal(response.body.transactionId, response.body.createdAtInstantOrNow(), stats)
                 }
             }
         }
