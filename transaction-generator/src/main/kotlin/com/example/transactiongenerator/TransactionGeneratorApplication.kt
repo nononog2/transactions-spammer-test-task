@@ -50,23 +50,20 @@ fun main() = runBlocking {
             maxConnectionsCount = cfg.concurrency * 2
 
             endpoint {
-                // Per-route (host:port) connection limit — must equal the global limit
-                // for a single-target test so the per-route cap never fires first.
+                // Per-route (host:port) limit — align with global pool so the
+                // per-route cap never silently fires before the global one.
                 maxConnectionsPerRoute = cfg.concurrency * 2
 
-                // Keep idle connections alive for 30 s.  This is the primary lever
-                // against BindException: as long as a connection is reused the port
-                // stays open and never enters TIME_WAIT.
+                // Keep idle connections alive for 30 s so they are reused across
+                // requests.  Connection reuse is the primary defence against port
+                // exhaustion: a reused connection never enters TIME_WAIT.
                 keepAliveTime = 30_000
-
-                // How many pipelined requests a single TCP connection may carry.
-                // 20 in-flight requests per connection → at 1000 TPS only ~2 ms per
-                // request, so ≈ 2 concurrent; with pipelining one connection suffices
-                // for the entire load and new TCP connections are rarely opened.
-                pipelineMaxSize = 20
 
                 connectTimeout = 5_000
                 connectRetryAttempts = 0
+                // pipelineMaxSize is intentionally left at default (20 is the Ktor
+                // default) — explicit pipelining can cause issues with Tomcat under
+                // high load, so we rely on keep-alive + pool reuse instead.
             }
 
             requestTimeout = 5_000
